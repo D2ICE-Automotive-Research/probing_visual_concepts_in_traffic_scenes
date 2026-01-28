@@ -183,6 +183,7 @@ def aggregate_best_results(best_results_list):
     Combines results from multiple runs by:
     - Collecting unique values for categorical metrics (best_lr, best_epoch)
     - Averaging numerical metrics (losses, accuracies)
+    - Computing standard deviation for accuracy metrics
     """
     aggregated = defaultdict(list)
     if not best_results_list:
@@ -194,6 +195,8 @@ def aggregate_best_results(best_results_list):
     avg_keys = ["train_losses", "train_accuracies",
                 "val_losses", "val_accuracies",
                 "test_losses", "test_accuracies"]
+    # Accuracy metrics: also compute standard deviation
+    std_keys = ["train_accuracies", "val_accuracies", "test_accuracies"]
 
     # Determine the number of layers from first run
     length = len(best_results_list[0]["best_lr"])
@@ -214,8 +217,16 @@ def aggregate_best_results(best_results_list):
                     vals.append(d[k][i])
             if vals:
                 aggregated[k].append(sum(vals) / len(vals))
+                # Compute standard deviation for accuracy metrics
+                if k in std_keys:
+                    mean = sum(vals) / len(vals)
+                    variance = sum((x - mean) ** 2 for x in vals) / len(vals)
+                    std = variance ** 0.5
+                    aggregated[k.replace("accuracies", "accuracies_std")].append(std)
             else:
                 aggregated[k].append(float('nan'))
+                if k in std_keys:
+                    aggregated[k.replace("accuracies", "accuracies_std")].append(float('nan'))
 
     return aggregated
 
@@ -264,9 +275,9 @@ def save_and_plot_results(results, args, order_layers, best_probes, category):
         log += f"{order_layers[i]}:\n"
         log += f"\t Best LR: {results['best_lr'][i]}\n"
         log += f"\t Best Epoch: {results['best_epoch'][i]}\n"
-        log += f"\t Train Loss: {results['train_losses'][i]:.4f}, Train Acc: {results['train_accuracies'][i]:.4f}\n"
-        log += f"\t Validation Loss: {results['val_losses'][i]:.4f}, Validation Acc: {results['val_accuracies'][i]:.4f}\n"
-        log += f"\t Test Loss: {results['test_losses'][i]:.4f}, Test Acc: {results['test_accuracies'][i]:.4f}\n"
+        log += f"\t Train Loss: {results['train_losses'][i]:.4f}, Train Acc: {results['train_accuracies'][i]:.4f} (std: {results['train_accuracies_std'][i]:.4f})\n"
+        log += f"\t Validation Loss: {results['val_losses'][i]:.4f}, Validation Acc: {results['val_accuracies'][i]:.4f} (std: {results['val_accuracies_std'][i]:.4f})\n"
+        log += f"\t Test Loss: {results['test_losses'][i]:.4f}, Test Acc: {results['test_accuracies'][i]:.4f} (std: {results['test_accuracies_std'][i]:.4f})\n"
         log += "----------------------------------------\n"
 
     with open(save_path + "/log.txt", 'w') as f:
