@@ -3,8 +3,6 @@ __pycache__/
 draft.ipynb
 *.safetensors
 *.pth
-*.jpg
-*.pt
 wandb/
 **/wandb/
 *.joblib
