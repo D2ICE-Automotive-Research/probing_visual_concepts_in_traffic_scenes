@@ -1,0 +1,11 @@
+*.png
+__pycache__/
+draft.ipynb
+*.safetensors
+*.pth
+*.jpg
+*.pt
+wandb/
+**/wandb/
+*.joblib
+*.pkl
