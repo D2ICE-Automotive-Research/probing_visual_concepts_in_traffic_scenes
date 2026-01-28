@@ -5,6 +5,8 @@
 
 This repository contains the implementation of our work on probing visual concepts in traffic scenes using Vision-Language Models (VLMs). We investigate how different layers of VLMs encode traffic-relevant visual concepts through linear probing.
 
+![Thumbnail](thumbnail.jpg)
+
 ## Overview
 
 We analyze the internal representations of state-of-the-art small VLMs to understand how they encode various traffic scene concepts, including:
