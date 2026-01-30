@@ -149,6 +149,11 @@ learning_rates = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
 all_best_results = []
 all_best_probes = defaultdict(list)
 
+if args.num_out == 1:
+    loss_fn = torch.nn.BCEWithLogitsLoss()
+else:
+    loss_fn = torch.nn.CrossEntropyLoss()
+
 for _ in tqdm(range(args.num_repeats)):
     # Nested dict: results[layer][learning_rate][metric] = list of values
     results = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
@@ -156,11 +161,6 @@ for _ in tqdm(range(args.num_repeats)):
     # Train a separate probe for each model layer
     for level in tqdm(train_datasets.keys()):
         train_loader, val_loader, test_loader = train_dataloaders[level], val_dataloaders[level], test_dataloaders[level]
-
-        if args.num_out == 1:
-                loss_fn = torch.nn.BCEWithLogitsLoss()
-        else:
-            loss_fn = torch.nn.CrossEntropyLoss()
         
         # Track best probe across all learning rates and epochs
         best_probe = None
@@ -236,7 +236,7 @@ for _ in tqdm(range(args.num_repeats)):
                 
                 # Track the best model based on validation accuracy
                 current_val_acc = overall_val_acc / val_size
-                if current_val_acc > max_val_acc:
+                if current_val_acc >= max_val_acc:
                     max_val_acc = current_val_acc
                     best_probe = deepcopy(probe.state_dict())
                     best_lr = lr
