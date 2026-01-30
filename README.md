@@ -18,6 +18,17 @@ We analyze the internal representations of state-of-the-art small VLMs to unders
 in the scene in relation to something else
 - **Orientation Detection**: The orientation of an object in the scene
 
+## Dataset
+
+Download our counterfactual images dataset from: **[Dataset Link Placeholder](https://placeholder-dataset-link.com)**
+
+Each annotation corresponds to an image and includes:
+- `image_path`
+- `distance`: Distance to the object (for distance-stratified analysis)
+- `label`: Ground truth label for the visual concept
+- `weather`: The weather conditions in CARLA simulator for the specific sample
+- `town`: CARLA town identifier (used for train/val/test splits)
+
 ## Supported Models
 
 - **[Ovis2.5-2B](https://huggingface.co/AIDC-AI/Ovis2.5-2B)**
@@ -45,17 +56,6 @@ pip install flash-attn==2.6.3 --no-build-isolation
 pip install -r requirements.txt
 ```
 
-## Dataset
-
-Download our counterfactual images dataset from: **[Dataset Link Placeholder](https://placeholder-dataset-link.com)**
-
-Each annotation corresponds to an image and includes:
-- `image_path`
-- `distance`: Distance to the object (for distance-stratified analysis)
-- `label`: Ground truth label for the visual concept
-- `weather`: The weather conditions in CARLA simulator for the specific sample
-- `town`: CARLA town identifier (used for train/val/test splits)
-
 ## Usage
 
 ### 1. Feature Extraction
@@ -65,7 +65,6 @@ Extract features from different layers of the VLMs:
 ```bash
 cd feature_extraction
 
-# Extract Ovis2.5 features
 python extract_features.py \
     --model ovis2.5 \
     --annotations_path /path/to/annotations.json \
@@ -86,7 +85,7 @@ python extract_features.py \
 
 ### 2. Probe Training
 
-Train linear or MLP probes on the extracted features:
+Train linear probes on the extracted features:
 
 ```bash
 cd probe_training
