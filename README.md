@@ -1,16 +1,14 @@
 # Probing Visual Concepts in Vision-Language Models for Autonomous Driving
 
-[![arXiv](https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg)](https://arxiv.org/abs/XXXX.XXXXX)
-[![Dataset](https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg)](https://drive.google.com/PLACEHOLDER)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-This repository contains the implementation of our work on probing visual concepts in traffic scenes using Vision-Language Models (VLMs). We investigate how different layers of VLMs encode traffic-relevant visual concepts through linear probing.
+<a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank"><img src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg" alt="arXiv"></a>
+<a href="https://drive.google.com/PLACEHOLDER" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
+<a href="https://opensource.org/licenses/MIT" target="_blank"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 
 ![Thumbnail](thumbnail.jpg)
 
 ## Overview
 
-We analyze the internal representations of state-of-the-art small VLMs to understand how they encode various traffic scene concepts, including:
+We analyze the internal representations of state-of-the-art small VLMs to understand how they encode various simple visual concepts that are particularly useful for understanding a traffic scene. These visual concepts are:
 
 - **Presence**: Whether something is present in the scene
 - **Count**: How many instances of an object are present in the scene
@@ -20,7 +18,7 @@ in the scene in relation to something else
 
 ## Dataset
 
-Download our counterfactual images dataset from: **[Dataset Link Placeholder](https://placeholder-dataset-link.com)**
+Download our counterfactual images dataset from: **<a href="https://placeholder-dataset-link.com" target="_blank">Dataset Link Placeholder</a>**
 
 Each annotation corresponds to an image and includes:
 - `image_path`
@@ -31,9 +29,9 @@ Each annotation corresponds to an image and includes:
 
 ## Supported Models
 
-- **[Ovis2.5-2B](https://huggingface.co/AIDC-AI/Ovis2.5-2B)**
-- **[InternVL3.5-2B](https://huggingface.co/OpenGVLab/InternVL3_5-2B)**
-- **[VST-3B](https://huggingface.co/rayruiyang/VST-3B-RL)** (SFT and RL variants)
+- **<a href="https://huggingface.co/AIDC-AI/Ovis2.5-2B" target="_blank">Ovis2.5-2B</a>**
+- **<a href="https://huggingface.co/OpenGVLab/InternVL3_5-2B" target="_blank">InternVL3.5-2B</a>**
+- **<a href="https://huggingface.co/rayruiyang/VST-3B-RL" target="_blank">VST-3B</a>** (SFT and RL variants)
 
 ## Installation
 
