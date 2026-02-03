@@ -1,7 +1,7 @@
 # Probing Visual Concepts in Vision-Language Models for Autonomous Driving
 
 <a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank"><img src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg" alt="arXiv"></a>
-<a href="https://drive.google.com/PLACEHOLDER" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
+<a href="https://drive.google.com/drive/folders/19-ylfZjILrFhP6OAcm09uys0FC87fKP0?usp=sharing" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
 <a href="https://opensource.org/licenses/MIT" target="_blank"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 
 ![Thumbnail](thumbnail.jpg)
@@ -18,7 +18,7 @@ in the scene in relation to something else
 
 ## Dataset
 
-Download our counterfactual images dataset from: **<a href="https://placeholder-dataset-link.com" target="_blank">Dataset Link Placeholder</a>**
+Download our counterfactual images dataset **<a href="https://drive.google.com/drive/folders/19-ylfZjILrFhP6OAcm09uys0FC87fKP0?usp=sharing" target="_blank">here</a>**.
 
 Each annotation corresponds to an image and includes:
 - `image_path`
