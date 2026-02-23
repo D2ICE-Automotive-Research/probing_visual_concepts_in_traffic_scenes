@@ -1,6 +1,8 @@
 import torch
 import torchvision.transforms as T
 
+from typing import Optional
+
 from PIL import Image
 from torchvision.transforms import InterpolationMode
 from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, Qwen2_5_VLForConditionalGeneration, AutoProcessor
@@ -83,6 +85,57 @@ def load_image(image_file, input_size=448, max_num=12):
     pixel_values = [transform(image) for image in images]
     pixel_values = torch.stack(pixel_values)
     return pixel_values
+
+
+def get_tile_grid_info(image_path, image_size=448, max_num=12):
+    """Compute tile grid dimensions using the same aspect-ratio logic as `dynamic_preprocess`.
+
+    Returns a dict with keys: cols, rows, num_main_tiles, has_thumbnail.
+    """
+    image = Image.open(image_path).convert('RGB')
+    orig_width, orig_height = image.size
+    aspect_ratio = orig_width / orig_height
+
+    target_ratios = set(
+        (i, j) for n in range(1, max_num + 1)
+        for i in range(1, n + 1) for j in range(1, n + 1)
+        if i * j <= max_num and i * j >= 1
+    )
+    target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
+
+    target_aspect_ratio = find_closest_aspect_ratio(
+        aspect_ratio, target_ratios, orig_width, orig_height, image_size
+    )
+
+    cols = target_aspect_ratio[0]
+    rows = target_aspect_ratio[1]
+    num_main_tiles = cols * rows
+    has_thumbnail = num_main_tiles > 1
+
+    return {
+        "cols": cols,
+        "rows": rows,
+        "num_main_tiles": num_main_tiles,
+        "has_thumbnail": has_thumbnail,
+    }
+
+
+def _region_pool(tokens_2d: torch.Tensor, hidden_dim: int, split: Optional[int] = None) -> torch.Tensor:
+    """Average-pool left and right regions of a 2D token grid and concatenate.
+
+    Args:
+        tokens_2d: Tensor of shape (h, w, hidden_dim)
+        hidden_dim: feature dimension
+        split: column index to split on; defaults to w//2
+
+    Returns:
+        Tensor of shape (2 * hidden_dim,)
+    """
+    if split is None:
+        split = tokens_2d.shape[1] // 2
+    left = tokens_2d[:, :split].reshape(-1, hidden_dim).mean(dim=0)
+    right = tokens_2d[:, split:].reshape(-1, hidden_dim).mean(dim=0)
+    return torch.cat([left, right], dim=0)
 
 # ============================================================================
 # Query utilities
@@ -254,14 +307,14 @@ def _preprocess_vst(processor, annotation, question):
 # Hook registration functions
 # ============================================================================
 
-def register_hooks(model_name, model, save_hook, initial_inputs):
+def register_hooks(model_name, model, save_hook, initial_inputs, hook_state=None):
     """Register forward hooks for feature extraction."""
     if model_name == "ovis2.5":
         _register_hooks_ovis2_5(model, save_hook, initial_inputs)
     elif model_name == "internvl3.5":
         _register_hooks_internvl3_5(model, save_hook, initial_inputs)
     elif model_name == "vst":
-        _register_hooks_vst(model, save_hook, initial_inputs)
+        _register_hooks_vst(model, save_hook, initial_inputs, hook_state=hook_state)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -315,7 +368,7 @@ def _register_hooks_internvl3_5(model, save_hook, inputs):
         save_hook(f"language_model/post_layer_norm", "llm", indices=indices)
     )
 
-def _register_hooks_vst(model, save_hook, inputs):
+def _register_hooks_vst(model, save_hook, inputs, hook_state=None):
     # Vision encoder hooks
     vision_encoder_layers = list(range(len(model.model.visual.blocks)))
     for layer in vision_encoder_layers:
@@ -324,18 +377,33 @@ def _register_hooks_vst(model, save_hook, inputs):
         )
     
     # Projector hook
-    model.model.visual.merger.register_forward_hook(save_hook("projector", "projector"))
+    model.model.visual.register_forward_hook(save_hook("projector", "projector"))
     
     # Language model hooks
     indices = (inputs.input_ids[0] == 151655).nonzero(as_tuple=True)[0]
+    indices_ref = None
+    if hook_state is not None:
+        indices_ref = hook_state.get("indices_ref")
+        if indices_ref is not None:
+            indices_ref["indices"] = indices
     language_model_layers = list(range(len(model.model.language_model.layers)))
     for layer in language_model_layers:
         model.model.language_model.layers[layer].register_forward_hook(
-            save_hook(f"language_model/layer_{layer + 1}", "llm", indices=indices)
+            save_hook(
+                f"language_model/layer_{layer + 1}",
+                "llm",
+                indices=indices,
+                indices_ref=indices_ref,
+            )
         )
     
     model.model.language_model.register_forward_hook(
-        save_hook(f"language_model/post_layer_norm", "llm", indices=indices)
+        save_hook(
+            f"language_model/post_layer_norm",
+            "llm",
+            indices=indices,
+            indices_ref=indices_ref,
+        )
     )
 
 # ============================================================================
@@ -370,93 +438,272 @@ def run_inference(model_name, model, inputs):
 
 def get_save_hook(model_name, args, average_features):
     """Get the appropriate save hook for the model."""
+    region_pooling = getattr(args, "region_pooling", getattr(args, "spatial_pooling", False))
     if model_name == "ovis2.5":
-        return get_save_hook_ovis2_5(args.llm_features, average_features)
+        return get_save_hook_ovis2_5(
+            args.llm_features,
+            average_features,
+            region_pooling=region_pooling,
+            grid_info=getattr(args, "_grid_info", None),
+            window_index=getattr(args, "_window_index", None),
+            split=getattr(args, "split", None),
+        )
     elif model_name == "internvl3.5":
-        return get_save_hook_internvl3_5(args.use_cls, args.llm_features, average_features)
+        return get_save_hook_internvl3_5(
+            args.use_cls,
+            args.llm_features,
+            average_features,
+            region_pooling=region_pooling,
+            grid_info=getattr(args, "_grid_info", None),
+            split=getattr(args, "split", None),
+        )
     elif model_name == "vst":
-        return get_save_hook_vst(args.llm_features, average_features)
+        return get_save_hook_vst(
+            args.llm_features,
+            average_features,
+            region_pooling=region_pooling,
+            grid_info=getattr(args, "_grid_info", None),
+            window_index=getattr(args, "_window_index", None),
+            split=getattr(args, "split", None),
+        )
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
-def get_save_hook_internvl3_5(use_cls, llm_features, average_features):
+def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_pooling=False, grid_info=None, split=None):
     def save_hook(name, model_component, indices=None):
         def hook(module, inp, out):
             if model_component == "vision_encoder":
-                if not use_cls:
-                    average_features[name].append(out[:, 1:].mean(dim=(0, 1)).detach())
+                if region_pooling and grid_info is not None:
+                    cols, rows = grid_info["cols"], grid_info["rows"]
+                    num_main_tiles = grid_info["num_main_tiles"]
+                    tile_h, tile_w = 32, 32
+                    hidden_dim = out.shape[-1]
+                    main_tiles = out[:num_main_tiles, 1:]
+                    main_tiles = main_tiles.reshape(rows, cols, tile_h, tile_w, hidden_dim)
+                    full_grid = main_tiles.permute(0, 2, 1, 3, 4).reshape(
+                        rows * tile_h, cols * tile_w, hidden_dim
+                    )
+                    average_features[name].append(
+                        _region_pool(full_grid, hidden_dim, split=split).detach()
+                    )
+                else:
+                    if not use_cls:
+                        average_features[name].append(out[:, 1:].mean(dim=(0, 1)).detach())
+                    else:
+                        average_features[name].append(out.mean(dim=(0, 1)).detach())
+            elif model_component == "projector":
+                if region_pooling and grid_info is not None:
+                    cols, rows = grid_info["cols"], grid_info["rows"]
+                    num_main_tiles = grid_info["num_main_tiles"]
+                    tile_h, tile_w = 16, 16
+                    hidden_dim = out.shape[-1]
+                    main_tiles = out[:num_main_tiles]
+                    main_tiles = main_tiles.reshape(rows, cols, tile_h, tile_w, hidden_dim)
+                    full_grid = main_tiles.permute(0, 2, 1, 3, 4).reshape(
+                        rows * tile_h, cols * tile_w, hidden_dim
+                    )
+                    current_split = split // 2 if split is not None else None
+                    average_features[name].append(
+                        _region_pool(full_grid, hidden_dim, split=current_split).detach()
+                    )
                 else:
                     average_features[name].append(out.mean(dim=(0, 1)).detach())
-            elif model_component == "projector":
-                average_features[name].append(out.mean(dim=(0, 1)).detach())
             elif model_component == "llm":
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
                 if llm_features == "visual_embs":
-                    average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
+                    if region_pooling and grid_info is not None:
+                        cols, rows = grid_info["cols"], grid_info["rows"]
+                        num_main_tiles = grid_info["num_main_tiles"]
+                        tile_h, tile_w = 16, 16
+                        main_indices = indices[:num_main_tiles * tile_h * tile_w]
+                        vis_tokens = out[0, main_indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        vis_tokens = vis_tokens.reshape(rows, cols, tile_h, tile_w, hidden_dim)
+                        full_grid = vis_tokens.permute(0, 2, 1, 3, 4).reshape(
+                            rows * tile_h, cols * tile_w, hidden_dim
+                        )
+                        current_split = split // 2 if split is not None else None
+                        average_features[name].append(
+                            _region_pool(full_grid, hidden_dim, split=current_split).detach()
+                        )
+                    else:
+                        average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
                 elif llm_features == "last_token":
                     average_features[name].append(out[0, -1].clone().detach())
                 elif llm_features == "all":
                     average_features[name].append(out.mean(dim=(0, 1)).detach())
                 elif llm_features == "visual_embs_and_last_token":
-                    f1 = out[:, indices].mean(dim=(0, 1)).detach()
+                    if region_pooling and grid_info is not None:
+                        cols, rows = grid_info["cols"], grid_info["rows"]
+                        num_main_tiles = grid_info["num_main_tiles"]
+                        tile_h, tile_w = 16, 16
+                        main_indices = indices[:num_main_tiles * tile_h * tile_w]
+                        vis_tokens = out[0, main_indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        vis_tokens = vis_tokens.reshape(rows, cols, tile_h, tile_w, hidden_dim)
+                        full_grid = vis_tokens.permute(0, 2, 1, 3, 4).reshape(
+                            rows * tile_h, cols * tile_w, hidden_dim
+                        )
+                        current_split = split // 2 if split is not None else None
+                        f1 = _region_pool(full_grid, hidden_dim, split=current_split).detach()
+                    else:
+                        f1 = out[:, indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
                     average_features[name].append(torch.cat([f1, f2], dim=0))
         return hook
 
     return save_hook
 
-def get_save_hook_ovis2_5(llm_features, average_features):
+def get_save_hook_ovis2_5(
+    llm_features,
+    average_features,
+    region_pooling=False,
+    grid_info=None,
+    window_index=None,
+    split=None,
+):
     def save_hook(name, model_component, indices=None):
         def hook(module, inp, out):
             if model_component == "vision_encoder":
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
-                average_features[name].append(out.mean(dim=0).detach())
+                if region_pooling and grid_info is not None:
+                    if window_index is None:
+                        raise ValueError("window_index must be provided for Ovis2.5 region pooling")
+                    gh, gw = grid_info["vit_h"], grid_info["vit_w"]
+                    hidden_dim = out.shape[-1]
+                    tokens = out.squeeze(0)
+                    tokens = tokens.reshape((gh * gw) // 4, 4, hidden_dim)
+                    tokens = tokens[torch.argsort(window_index.to(tokens.device))]
+                    tokens = tokens.reshape(gh * gw, hidden_dim)
+                    tokens_2d = tokens.reshape(gh // 2, gw // 2, 2, 2, hidden_dim)
+                    tokens_2d = tokens_2d.permute(0, 2, 1, 3, 4).reshape(gh, gw, hidden_dim)
+                    average_features[name].append(
+                        _region_pool(tokens_2d, hidden_dim, split=split).detach()
+                    )
+                else:
+                    average_features[name].append(out.mean(dim=0).detach())
             elif model_component == "projector":
                 if out.shape[0] > 4:
-                    average_features[name].append(out.mean(dim=0).detach())
+                    if region_pooling and grid_info is not None:
+                        mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                        hidden_dim = out.shape[-1]
+                        tokens_2d = out.reshape(mh, mw, hidden_dim)
+                        current_split = split // 2 if split is not None else None
+                        average_features[name].append(
+                            _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                        )
+                    else:
+                        average_features[name].append(out.mean(dim=0).detach())
             elif model_component == "llm":
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
                 if llm_features == "visual_embs":
-                    average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
+                    if region_pooling and grid_info is not None:
+                        mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                        vis_tokens = out[0, indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
+                        current_split = split // 2 if split is not None else None
+                        average_features[name].append(
+                            _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                        )
+                    else:
+                        average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
                 elif llm_features == "last_token":
                     average_features[name].append(out[0, -1].clone().detach())
                 elif llm_features == "all":
                     average_features[name].append(out.mean(dim=(0, 1)).detach())
                 elif llm_features == "visual_embs_and_last_token":
-                    f1 = out[:, indices].mean(dim=(0, 1)).detach()
+                    if region_pooling and grid_info is not None:
+                        mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                        vis_tokens = out[0, indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
+                        current_split = split // 2 if split is not None else None
+                        f1 = _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                    else:
+                        f1 = out[:, indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
                     average_features[name].append(torch.cat([f1, f2], dim=0))
         return hook
 
     return save_hook
 
-def get_save_hook_vst(llm_features, average_features):
-    def save_hook(name, model_component, indices=None):
+def get_save_hook_vst(
+    llm_features,
+    average_features,
+    region_pooling=False,
+    grid_info=None,
+    window_index=None,
+    split=None,
+):
+    def save_hook(name, model_component, indices=None, indices_ref=None):
         def hook(module, inp, out):
             if model_component == "vision_encoder":
-                average_features[name].append(out.mean(dim=0).detach())
+                if region_pooling and grid_info is not None:
+                    if window_index is None:
+                        raise ValueError("window_index must be provided for VST region pooling")
+                    h, w = grid_info["vit_h"], grid_info["vit_w"]
+                    hidden_dim = out.shape[-1]
+                    tokens = out.reshape((h * w) // 4, 4, hidden_dim)
+                    tokens = tokens[torch.argsort(window_index.to(tokens.device))]
+                    tokens = tokens.reshape(h * w, hidden_dim)
+                    tokens_2d = tokens.reshape(h // 2, w // 2, 2, 2, hidden_dim)
+                    tokens_2d = tokens_2d.permute(0, 2, 1, 3, 4).reshape(h, w, hidden_dim)
+                    average_features[name].append(
+                        _region_pool(tokens_2d, hidden_dim, split=split).detach()
+                    )
+                else:
+                    average_features[name].append(out.mean(dim=0).detach())
             elif model_component == "projector":
-                average_features[name].append(out.mean(dim=0).detach())
+                if region_pooling and grid_info is not None:
+                    mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                    hidden_dim = out.shape[-1]
+                    tokens_2d = out.reshape(mh, mw, hidden_dim)
+                    current_split = split // 2 if split is not None else None
+                    average_features[name].append(
+                        _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                    )
+                else:
+                    average_features[name].append(out.mean(dim=0).detach())
             elif model_component == "llm":
+                current_indices = indices_ref["indices"] if indices_ref is not None else indices
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
                 if llm_features == "visual_embs":
-                    average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
+                    if region_pooling and grid_info is not None:
+                        mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                        vis_tokens = out[0, current_indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
+                        current_split = split // 2 if split is not None else None
+                        average_features[name].append(
+                            _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                        )
+                    else:
+                        average_features[name].append(out[:, current_indices].mean(dim=(0, 1)).detach())
                 elif llm_features == "last_token":
                     average_features[name].append(out[0, -1].clone().detach())
                 elif llm_features == "all":
                     average_features[name].append(out.mean(dim=(0, 1)).detach())
                 elif llm_features == "visual_embs_and_last_token":
-                    f1 = out[:, indices].mean(dim=(0, 1)).detach()
+                    if region_pooling and grid_info is not None:
+                        mh, mw = grid_info["merged_h"], grid_info["merged_w"]
+                        vis_tokens = out[0, current_indices]
+                        hidden_dim = vis_tokens.shape[-1]
+                        tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
+                        current_split = split // 2 if split is not None else None
+                        f1 = _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
+                    else:
+                        f1 = out[:, current_indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
                     average_features[name].append(torch.cat([f1, f2], dim=0))
         return hook

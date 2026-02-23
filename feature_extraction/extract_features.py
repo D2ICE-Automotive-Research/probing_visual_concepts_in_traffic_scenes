@@ -12,7 +12,8 @@ from utils import (
     register_hooks,
     preprocess_inputs,
     run_inference,
-    get_save_path
+    get_save_path,
+    get_tile_grid_info,
 )
 
 argparser = argparse.ArgumentParser()
@@ -23,6 +24,12 @@ argparser.add_argument("--llm_features", type=str, default="visual_embs_and_last
                        choices=["visual_embs", "last_token", "all", "visual_embs_and_last_token"])
 argparser.add_argument("--category", type=int, default=0)
 argparser.add_argument("--save_path", type=str, default="./extracted_features")
+# Region pooling arguments
+argparser.add_argument("--distance", type=int, default=0)
+argparser.add_argument("--region_pooling", dest="region_pooling", action="store_true",
+                       help="Pool features separately over left/right halves of the visual token grid")
+argparser.add_argument("--split", type=int, default=None,
+                       help="Column index for left/right split; defaults to width//2")
 # Model-specific arguments
 argparser.add_argument("--use_cls", action="store_true", help="InternVL3.5: whether to use CLS token")
 argparser.add_argument("--num_tiles", type=int, default=9, help="InternVL3.5: number of tiles")
@@ -36,6 +43,9 @@ with open(args.annotations_path) as f:
 if "blinker" in args.annotations_path:
     annotations = [ann for ann in annotations if ann["label"] != 0]
 
+if args.distance:
+    annotations = [ann for ann in annotations if ann["distance"] == args.distance]
+
 # Get query
 question = get_query(args.category)
 
@@ -45,6 +55,20 @@ model, processor = load_model(args.model, args)
 # Prepare initial inputs to determine indices for hooks
 initial_inputs = preprocess_inputs(args.model, model, processor, annotations[0], question, args)
 
+# Region pooling state (mirrors probing_research scripts)
+grid_info = {} if args.region_pooling else None
+window_index = None
+indices_ref = {"indices": None} if args.model == "vst" else None
+
+if args.model == "ovis2.5" and args.region_pooling:
+    window_index, _ = model.visual_tokenizer.vit.vision_model.encoder.get_window_index(initial_inputs["grid_thws"])
+elif args.model == "vst" and args.region_pooling:
+    window_index = model.model.visual.get_window_index(initial_inputs["image_grid_thw"])[0]
+
+# Pass pooling context into save-hook factory (kept on args to avoid widening APIs)
+args._grid_info = grid_info
+args._window_index = window_index
+
 # Initialize feature storage
 average_features = defaultdict(list)
 
@@ -52,17 +76,47 @@ average_features = defaultdict(list)
 save_hook = get_save_hook(args.model, args, average_features)
 
 # Register hooks for all model components
-register_hooks(args.model, model, save_hook, initial_inputs)
+hook_state = {"indices_ref": indices_ref} if args.model == "vst" else None
+register_hooks(args.model, model, save_hook, initial_inputs, hook_state=hook_state)
 
 # Extract features for all annotations
-for ann in tqdm(annotations[:10]):
+for ann in tqdm(annotations[:1]):
     inputs = preprocess_inputs(args.model, model, processor, ann, question, args)
+
+    # Update per-image state for region pooling / VST indices
+    if args.model == "ovis2.5" and args.region_pooling and inputs.get("grid_thws", None) is not None:
+        _, gh, gw = inputs["grid_thws"][0].tolist()
+        gh, gw = int(gh), int(gw)
+        grid_info["vit_h"] = gh
+        grid_info["vit_w"] = gw
+        grid_info["merged_h"] = gh // 2
+        grid_info["merged_w"] = gw // 2
+    elif args.model == "internvl3.5" and args.region_pooling:
+        grid_info.update(get_tile_grid_info(ann["image_path"], max_num=12))
+    elif args.model == "vst":
+        # Update indices for this image (matches legacy `vst.py` behavior)
+        if indices_ref is not None:
+            new_indices = (inputs.input_ids[0] == 151655).nonzero(as_tuple=True)[0]
+            indices_ref["indices"] = new_indices
+
+        if args.region_pooling:
+            image_grid_thw = inputs["image_grid_thw"]
+            _, h, w = image_grid_thw[0].tolist()
+            h, w = int(h), int(w)
+            grid_info.update({
+                "vit_h": h,
+                "vit_w": w,
+                "merged_h": h // 2,
+                "merged_w": w // 2,
+            })
     
     with torch.inference_mode():
         run_inference(args.model, model, inputs)
 
 # Save features
 save_path = get_save_path(args.model, args)
+if args.region_pooling:
+    save_path = save_path.replace("features", "rp_features")
 
 for key, value in average_features.items():
     for feature, ann in zip(value, annotations):
