@@ -69,6 +69,26 @@ python extract_features.py \
     --category 1 \
 ```
 
+**Optional region pooling arguments**
+
+You can optionally pool visual-token features separately over the left/right halves of the visual token grid (and concatenate them) by enabling region pooling.
+
+- `--region_pooling`: enable left/right region pooling.
+- `--distance`: (optional) filter annotations to a specific object `distance` value (necessary when the splitting point depends on the distance of the object).
+
+When `--region_pooling` is enabled, extracted features are saved under a `rp_features` directory (instead of `features`) to keep them separate.
+
+Example:
+
+```bash
+python extract_features.py \
+    --model ovis2.5 \
+    --annotations_path /path/to/annotations.json \
+    --category 2 \
+    --distance 20 \
+    --region_pooling
+```
+
 **Category IDs:**
 | ID | Category |
 |----|---------|

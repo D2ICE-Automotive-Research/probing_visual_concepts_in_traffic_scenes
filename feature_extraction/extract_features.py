@@ -16,6 +16,37 @@ from utils import (
     get_tile_grid_info,
 )
 
+
+# ----------------------------------------------------------------------------
+# left/right split selection for region pooling
+#
+# When no numeric split is specified for a (model, category, distance) tuple,
+# we use None (which defaults to width//2 in the pooling code).
+# ----------------------------------------------------------------------------
+
+_AUTO_SPLITS = {
+    "ovis2.5": {
+        # category 2: pedestrian_direction
+        2: {5: 48, 10: 54, 20: 57, 30: 58, 40: 58, 50: 59},
+        # category 8: bicycle_direction
+        8: {5: 48, 10: 54, 20: 57, 30: 58, 40: 58, 50: 59},
+    },
+    "internvl3.5": {
+        2: {5: 52, 10: 58, 20: 61, 30: 62, 40: 62, 50: 63},
+        8: {5: 52, 10: 58, 20: 61, 30: 62, 40: 62, 50: 63},
+    },
+    "vst": {
+        2: {5: 38, 10: 42, 20: 45, 30: 45, 40: 46, 50: 46},
+        8: {5: 38, 10: 42, 20: 45, 30: 45, 40: 46, 50: 46},
+    },
+}
+
+
+def _infer_split(model_name: str, category: int, distance: int | None) -> int | None:
+    if not distance:
+        return None
+    return _AUTO_SPLITS.get(model_name, {}).get(int(category), {}).get(int(distance))
+
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--model", type=str, required=True, choices=["ovis2.5", "internvl3.5", "vst"],
                        help="Model to use for feature extraction")
@@ -28,13 +59,14 @@ argparser.add_argument("--save_path", type=str, default="./extracted_features")
 argparser.add_argument("--distance", type=int, default=0)
 argparser.add_argument("--region_pooling", dest="region_pooling", action="store_true",
                        help="Pool features separately over left/right halves of the visual token grid")
-argparser.add_argument("--split", type=int, default=None,
-                       help="Column index for left/right split; defaults to width//2")
 # Model-specific arguments
 argparser.add_argument("--use_cls", action="store_true", help="InternVL3.5: whether to use CLS token")
 argparser.add_argument("--num_tiles", type=int, default=9, help="InternVL3.5: number of tiles")
 argparser.add_argument("--version", type=str, default="rl", choices=["rl", "sft"], help="VST: model version")
 args = argparser.parse_args()
+
+# Determine split for region pooling.
+args.split = _infer_split(args.model, args.category, getattr(args, "distance", None))
 
 # Load annotations
 with open(args.annotations_path) as f:
@@ -45,6 +77,12 @@ if "blinker" in args.annotations_path:
 
 if args.distance:
     annotations = [ann for ann in annotations if ann["distance"] == args.distance]
+
+if len(annotations) == 0:
+    raise ValueError(
+        "No annotations left after filtering. "
+        "Check --annotations_path and (if used) --distance."
+    )
 
 # Get query
 question = get_query(args.category)
