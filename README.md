@@ -1,4 +1,4 @@
-# Probing Visual Concepts in Vision-Language Models for Autonomous Driving
+# Probing Visual Concepts in Lightweight Vision-Language Models for Automated Driving
 
 <a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank"><img src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg" alt="arXiv"></a>
 <a href="https://drive.google.com/drive/folders/19-ylfZjILrFhP6OAcm09uys0FC87fKP0?usp=sharing" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
