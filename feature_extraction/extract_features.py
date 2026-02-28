@@ -118,7 +118,7 @@ hook_state = {"indices_ref": indices_ref} if args.model == "vst" else None
 register_hooks(args.model, model, save_hook, initial_inputs, hook_state=hook_state)
 
 # Extract features for all annotations
-for ann in tqdm(annotations[:1]):
+for ann in tqdm(annotations):
     inputs = preprocess_inputs(args.model, model, processor, ann, question, args)
 
     # Update per-image state for region pooling / VST indices
