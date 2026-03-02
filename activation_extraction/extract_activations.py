@@ -49,16 +49,16 @@ def _infer_split(model_name: str, category: int, distance: int | None) -> int | 
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--model", type=str, required=True, choices=["ovis2.5", "internvl3.5", "vst"],
-                       help="Model to use for feature extraction")
+                       help="Model to use for activation extraction")
 argparser.add_argument("--annotations_path", type=str, required=True)
-argparser.add_argument("--llm_features", type=str, default="visual_embs_and_last_token",
+argparser.add_argument("--llm_activations", type=str, default="visual_embs_and_last_token",
                        choices=["visual_embs", "last_token", "all", "visual_embs_and_last_token"])
 argparser.add_argument("--category", type=int, default=0)
 argparser.add_argument("--save_path", type=str, default="./extracted_features")
 # Region pooling arguments
 argparser.add_argument("--distance", type=int, default=0)
 argparser.add_argument("--region_pooling", dest="region_pooling", action="store_true",
-                       help="Pool features separately over left/right halves of the visual token grid")
+                       help="Pool activations separately over left/right halves of the visual token grid")
 # Model-specific arguments
 argparser.add_argument("--use_cls", action="store_true", help="InternVL3.5: whether to use CLS token")
 argparser.add_argument("--num_tiles", type=int, default=9, help="InternVL3.5: number of tiles")
@@ -107,17 +107,17 @@ elif args.model == "vst" and args.region_pooling:
 args._grid_info = grid_info
 args._window_index = window_index
 
-# Initialize feature storage
-average_features = defaultdict(list)
+# Initialize activation storage
+average_activations = defaultdict(list)
 
 # Create save hook
-save_hook = get_save_hook(args.model, args, average_features)
+save_hook = get_save_hook(args.model, args, average_activations)
 
 # Register hooks for all model components
 hook_state = {"indices_ref": indices_ref} if args.model == "vst" else None
 register_hooks(args.model, model, save_hook, initial_inputs, hook_state=hook_state)
 
-# Extract features for all annotations
+# Extract activations for all annotations
 for ann in tqdm(annotations):
     inputs = preprocess_inputs(args.model, model, processor, ann, question, args)
 
@@ -151,16 +151,16 @@ for ann in tqdm(annotations):
     with torch.inference_mode():
         run_inference(args.model, model, inputs)
 
-# Save features
+# Save activations
 save_path = get_save_path(args.model, args)
 if args.region_pooling:
     save_path = save_path.replace("features", "rp_features")
 
-for key, value in average_features.items():
-    for feature, ann in zip(value, annotations):
+for key, value in average_activations.items():
+    for activation, ann in zip(value, annotations):
         name = ann["image_path"].split("/")[-1][:-4]
         sample_save_path = f"{save_path}/{key}"
         os.makedirs(sample_save_path, exist_ok=True)
-        torch.save(feature.to(torch.float32).cpu(), f"{sample_save_path}/{name}.pt")
+        torch.save(activation.to(torch.float32).cpu(), f"{sample_save_path}/{name}.pt")
 
-print(f"Features saved to {save_path}")
+print(f"Activations saved to {save_path}")

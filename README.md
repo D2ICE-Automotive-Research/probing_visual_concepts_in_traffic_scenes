@@ -4,7 +4,7 @@
 <a href="https://drive.google.com/drive/folders/19-ylfZjILrFhP6OAcm09uys0FC87fKP0?usp=sharing" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
 <a href="https://opensource.org/licenses/MIT" target="_blank"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 
-![Thumbnail](thumbnail.jpg)
+![Thumbnail](thumbnail.png)
 
 ## Overview
 
@@ -56,14 +56,14 @@ pip install -r requirements.txt
 
 ## Usage
 
-### 1. Feature Extraction
+### 1. Activation Extraction
 
-Extract features from different layers of the VLMs:
+Extract activations from different layers of the VLMs:
 
 ```bash
-cd feature_extraction
+cd activation_extraction
 
-python extract_features.py \
+python extract_activations.py \
     --model ovis2.5 \
     --annotations_path /path/to/annotations.json \
     --category 1 \
@@ -71,17 +71,17 @@ python extract_features.py \
 
 **Optional region pooling arguments**
 
-You can optionally pool visual-token features separately over the left/right halves of the visual token grid (and concatenate them) by enabling region pooling.
+You can optionally pool visual-token activations separately over the left/right halves of the visual token grid (and concatenate them) by enabling region pooling.
 
 - `--region_pooling`: enable left/right region pooling.
 - `--distance`: (optional) filter annotations to a specific object `distance` value (necessary when the splitting point depends on the distance of the object).
 
-When `--region_pooling` is enabled, extracted features are saved under a `rp_features` directory (instead of `features`) to keep them separate.
+When `--region_pooling` is enabled, extracted activations are saved under a `rp_activations` directory (instead of `activations`) to keep them separate.
 
 Example:
 
 ```bash
-python extract_features.py \
+python extract_activations.py \
     --model ovis2.5 \
     --annotations_path /path/to/annotations.json \
     --category 2 \
@@ -103,14 +103,14 @@ python extract_features.py \
 
 ### 2. Probe Training
 
-Train linear probes on the extracted features:
+Train linear probes on the extracted activations:
 
 ```bash
 cd probe_training
 
 python train.py \
     --annotations_path /path/to/annotations.json \
-    --parent_features_directory /path/to/extracted_features \
+    --parent_activations_directory /path/to/extracted_activations \
     --num_out 1 \
 ```
 

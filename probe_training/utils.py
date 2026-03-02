@@ -1,8 +1,8 @@
 """
-Utility functions for training linear/MLP probes on visual language model features.
+Utility functions for training linear/MLP probes on visual language model activations.
 
 This module provides:
-- Feature directory discovery and ordering
+- Activation directory discovery and ordering
 - Dataset and DataLoader creation for probe training
 - Probe model creation (linear and MLP variants)
 - Results aggregation and visualization utilities
@@ -18,32 +18,32 @@ from collections import defaultdict
 
 
 # =============================================================================
-# Feature Directory Utilities
+# Activation Directory Utilities
 # =============================================================================
 
-def get_features_directories(parent_directory):
+def get_activations_directories(parent_directory):
     """
-    Discover and order all feature directories within a parent directory.
+    Discover and order all activation directories within a parent directory.
     
     Searches recursively for directories containing .pt (PyTorch tensor) files,
     excluding MLP and self-attention subdirectories. Returns directories ordered
     by model component (vision_encoder -> projector -> language_model) and layer number.
     """
-    # Step 1: Find all directories containing .pt feature files
-    features_directories = []
+    # Step 1: Find all directories containing .pt activation files
+    activations_directories = []
     for dirpath, _, filenames in os.walk(parent_directory):
         if filenames:
             if filenames[0].endswith(".pt"):
-                features_directories.append(dirpath)
+                activations_directories.append(dirpath)
 
     # Step 2: Extract readable directory names for sorting
     directory_names = []
-    for features_directory in features_directories:
-        if features_directory.endswith("projector"):
+    for activations_directory in activations_directories:
+        if activations_directory.endswith("projector"):
             directory_names.append("projector")
         else:
             # Extract component/layer format, e.g., "vision_encoder/layer_0"
-            directory_names.append("/".join(features_directory.split("/")[-2:]))
+            directory_names.append("/".join(activations_directory.split("/")[-2:]))
 
     # Step 3: Sort directories by component order
     # Order: vision_encoder layers -> projector -> language_model layers
@@ -66,14 +66,14 @@ def get_features_directories(parent_directory):
         directory_names.insert(len(directory_names) - i, "projector")
 
     # Step 4: Map sorted names back to full directory paths
-    ordered_features_directories = []   
+    ordered_activations_directories = []   
     for name in directory_names:
-        for d in features_directories:
+        for d in activations_directories:
             if d.endswith(name):
-                ordered_features_directories.append(d)
+                ordered_activations_directories.append(d)
                 break
 
-    return ordered_features_directories
+    return ordered_activations_directories
 
 
 # =============================================================================
@@ -82,39 +82,39 @@ def get_features_directories(parent_directory):
 
 class ProbeDataset(Dataset):
     """
-    PyTorch Dataset for loading pre-extracted features and their labels.
+    PyTorch Dataset for loading pre-extracted activations and their labels.
     
-    Each sample consists of a feature tensor (loaded from a .pt file) and
+    Each sample consists of an activation tensor (loaded from a .pt file) and
     its corresponding label from the annotations.
     """
-    def __init__(self, annotations, features_directory):
+    def __init__(self, annotations, activations_directory):
         self.annotations = annotations
-        self.features_directory = features_directory
+        self.activations_directory = activations_directory
 
     def __len__(self):
         return len(self.annotations)
 
     def __getitem__(self, idx):
-        # Construct feature file path by replacing image extension with .pt
-        feature_path = os.path.join(self.features_directory, self.annotations[idx]["image_path"].split("/")[-1].replace(".jpg", ".pt"))
-        feature = torch.load(feature_path)
+        # Construct activation file path by replacing image extension with .pt
+        activation_path = os.path.join(self.activations_directory, self.annotations[idx]["image_path"].split("/")[-1].replace(".jpg", ".pt"))
+        activation = torch.load(activation_path)
         label = self.annotations[idx]["label"]
 
-        return feature, label
+        return activation, label
 
 
-def dataset_creator(annotations, features_directories):
+def dataset_creator(annotations, activations_directories):
     """
-    Create a dictionary of ProbeDatasets, one for each feature directory.
+    Create a dictionary of ProbeDatasets, one for each activation directory.
     """
     datasets = {}
-    for features_directory in features_directories:
-        dataset = ProbeDataset(annotations, features_directory)
+    for activations_directory in activations_directories:
+        dataset = ProbeDataset(annotations, activations_directory)
         # Use simplified directory name as key
-        if features_directory.endswith("projector"):
+        if activations_directory.endswith("projector"):
             directory_name = "projector"
         else:
-            directory_name = "/".join(features_directory.split("/")[-2:])
+            directory_name = "/".join(activations_directory.split("/")[-2:])
         datasets[directory_name] = dataset
 
     return datasets
@@ -256,7 +256,7 @@ def save_and_plot_results(results, args, order_layers, best_probes, category):
         save_path = args.save_path + "/linear"
     if args.random_baseline:
         save_path = save_path + "/random_baseline"
-    save_path = os.path.join(save_path, category, args.parent_features_directory.split("features/")[-1], f"distance_{args.distance}")
+    save_path = os.path.join(save_path, category, args.parent_activations_directory.split("activations/")[-1], f"distance_{args.distance}")
     os.makedirs(save_path, exist_ok=True)
     
     # Save raw results as JSON

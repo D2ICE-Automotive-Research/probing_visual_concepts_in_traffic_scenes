@@ -1,14 +1,14 @@
 """
 Probe Training Script for Visual Concept Analysis in Traffic Scenes
 
-This script trains linear or MLP probes on top of pre-extracted features from 
+This script trains linear or MLP probes on top of pre-extracted activations from 
 vision-language models to evaluate how well different layers encode specific 
 visual concepts in traffic scenes.
 
 The training process:
 1. Loads annotations and filters them based on task-specific criteria
 2. Splits data into train/val/test sets (by town to ensure generalization)
-3. Creates dataloaders for features extracted from multiple model layers
+3. Creates dataloaders for activations extracted from multiple model layers
 4. Trains probes with learning rate search based on validation
 5. Evaluates the best probe on the held-out test set
 6. Aggregates results across multiple runs for statistical robustness
@@ -23,7 +23,7 @@ from tqdm import tqdm
 from copy import deepcopy
 from sklearn.model_selection import train_test_split
 from utils import (
-    get_features_directories,
+    get_activations_directories,
     dataset_creator,
     dataloader_creator,
     create_probe,
@@ -37,7 +37,7 @@ from utils import (
 # ============================================================================
 parser = argparse.ArgumentParser()
 parser.add_argument("--annotations_path", type=str)           # Path to JSON file with image annotations
-parser.add_argument("--parent_features_directory", type=str)  # Directory containing extracted features
+parser.add_argument("--parent_activations_directory", type=str)  # Directory containing extracted activations
 parser.add_argument("--num_out", type=int)                    # Number of output classes (1 for binary classification)
 parser.add_argument("--distance", type=int, default=None)     # Filter annotations by distance (None = all distances)
 parser.add_argument("--epochs", type=int, default=10)         # Number of training epochs per learning rate
@@ -124,17 +124,17 @@ if args.random_baseline:
         cnt += test_size // steps
 
 # ============================================================================
-# FEATURE DIRECTORY SETUP
-# Configure paths to pre-extracted features from different model layers
+# ACTIVATIONS DIRECTORY SETUP
+# Configure paths to pre-extracted activations from different model layers
 # ============================================================================
-features_directories = get_features_directories(args.parent_features_directory)
+activations_directories = get_activations_directories(args.parent_activations_directory)
 
 # ============================================================================
 # DATASET AND DATALOADER CREATION
 # ============================================================================
-train_datasets = dataset_creator(train_annotations, features_directories)
-val_datasets = dataset_creator(val_annotations, features_directories)
-test_datasets = dataset_creator(test_annotations, features_directories)
+train_datasets = dataset_creator(train_annotations, activations_directories)
+val_datasets = dataset_creator(val_annotations, activations_directories)
+test_datasets = dataset_creator(test_annotations, activations_directories)
 
 train_dataloaders = dataloader_creator(train_datasets, batch_size=32, shuffle=True)
 val_dataloaders = dataloader_creator(val_datasets, batch_size=32, shuffle=False)

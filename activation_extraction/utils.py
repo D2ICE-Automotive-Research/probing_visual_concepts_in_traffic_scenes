@@ -125,7 +125,7 @@ def _region_pool(tokens_2d: torch.Tensor, hidden_dim: int, split: Optional[int] 
 
     Args:
         tokens_2d: Tensor of shape (h, w, hidden_dim)
-        hidden_dim: feature dimension
+        hidden_dim: activation dimension
         split: column index to split on; defaults to w//2
 
     Returns:
@@ -308,7 +308,7 @@ def _preprocess_vst(processor, annotation, question):
 # ============================================================================
 
 def register_hooks(model_name, model, save_hook, initial_inputs, hook_state=None):
-    """Register forward hooks for feature extraction."""
+    """Register forward hooks for activation extraction."""
     if model_name == "ovis2.5":
         _register_hooks_ovis2_5(model, save_hook, initial_inputs)
     elif model_name == "internvl3.5":
@@ -436,13 +436,13 @@ def run_inference(model_name, model, inputs):
 # Save hook functions
 # ============================================================================
 
-def get_save_hook(model_name, args, average_features):
+def get_save_hook(model_name, args, average_activations):
     """Get the appropriate save hook for the model."""
     region_pooling = getattr(args, "region_pooling", getattr(args, "spatial_pooling", False))
     if model_name == "ovis2.5":
         return get_save_hook_ovis2_5(
-            args.llm_features,
-            average_features,
+            args.llm_activations,
+            average_activations,
             region_pooling=region_pooling,
             grid_info=getattr(args, "_grid_info", None),
             window_index=getattr(args, "_window_index", None),
@@ -451,16 +451,16 @@ def get_save_hook(model_name, args, average_features):
     elif model_name == "internvl3.5":
         return get_save_hook_internvl3_5(
             args.use_cls,
-            args.llm_features,
-            average_features,
+            args.llm_activations,
+            average_activations,
             region_pooling=region_pooling,
             grid_info=getattr(args, "_grid_info", None),
             split=getattr(args, "split", None),
         )
     elif model_name == "vst":
         return get_save_hook_vst(
-            args.llm_features,
-            average_features,
+            args.llm_activations,
+            average_activations,
             region_pooling=region_pooling,
             grid_info=getattr(args, "_grid_info", None),
             window_index=getattr(args, "_window_index", None),
@@ -469,7 +469,7 @@ def get_save_hook(model_name, args, average_features):
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
-def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_pooling=False, grid_info=None, split=None):
+def get_save_hook_internvl3_5(use_cls, llm_activations, average_activations, region_pooling=False, grid_info=None, split=None):
     def save_hook(name, model_component, indices=None):
         def hook(module, inp, out):
             if model_component == "vision_encoder":
@@ -483,14 +483,14 @@ def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_po
                     full_grid = main_tiles.permute(0, 2, 1, 3, 4).reshape(
                         rows * tile_h, cols * tile_w, hidden_dim
                     )
-                    average_features[name].append(
+                    average_activations[name].append(
                         _region_pool(full_grid, hidden_dim, split=split).detach()
                     )
                 else:
                     if not use_cls:
-                        average_features[name].append(out[:, 1:].mean(dim=(0, 1)).detach())
+                        average_activations[name].append(out[:, 1:].mean(dim=(0, 1)).detach())
                     else:
-                        average_features[name].append(out.mean(dim=(0, 1)).detach())
+                        average_activations[name].append(out.mean(dim=(0, 1)).detach())
             elif model_component == "projector":
                 if region_pooling and grid_info is not None:
                     cols, rows = grid_info["cols"], grid_info["rows"]
@@ -503,17 +503,17 @@ def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_po
                         rows * tile_h, cols * tile_w, hidden_dim
                     )
                     current_split = split // 2 if split is not None else None
-                    average_features[name].append(
+                    average_activations[name].append(
                         _region_pool(full_grid, hidden_dim, split=current_split).detach()
                     )
                 else:
-                    average_features[name].append(out.mean(dim=(0, 1)).detach())
+                    average_activations[name].append(out.mean(dim=(0, 1)).detach())
             elif model_component == "llm":
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
-                if llm_features == "visual_embs":
+                if llm_activations == "visual_embs":
                     if region_pooling and grid_info is not None:
                         cols, rows = grid_info["cols"], grid_info["rows"]
                         num_main_tiles = grid_info["num_main_tiles"]
@@ -526,16 +526,16 @@ def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_po
                             rows * tile_h, cols * tile_w, hidden_dim
                         )
                         current_split = split // 2 if split is not None else None
-                        average_features[name].append(
+                        average_activations[name].append(
                             _region_pool(full_grid, hidden_dim, split=current_split).detach()
                         )
                     else:
-                        average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
-                elif llm_features == "last_token":
-                    average_features[name].append(out[0, -1].clone().detach())
-                elif llm_features == "all":
-                    average_features[name].append(out.mean(dim=(0, 1)).detach())
-                elif llm_features == "visual_embs_and_last_token":
+                        average_activations[name].append(out[:, indices].mean(dim=(0, 1)).detach())
+                elif llm_activations == "last_token":
+                    average_activations[name].append(out[0, -1].clone().detach())
+                elif llm_activations == "all":
+                    average_activations[name].append(out.mean(dim=(0, 1)).detach())
+                elif llm_activations == "visual_embs_and_last_token":
                     if region_pooling and grid_info is not None:
                         cols, rows = grid_info["cols"], grid_info["rows"]
                         num_main_tiles = grid_info["num_main_tiles"]
@@ -552,14 +552,14 @@ def get_save_hook_internvl3_5(use_cls, llm_features, average_features, region_po
                     else:
                         f1 = out[:, indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
-                    average_features[name].append(torch.cat([f1, f2], dim=0))
+                    average_activations[name].append(torch.cat([f1, f2], dim=0))
         return hook
 
     return save_hook
 
 def get_save_hook_ovis2_5(
-    llm_features,
-    average_features,
+    llm_activations,
+    average_activations,
     region_pooling=False,
     grid_info=None,
     window_index=None,
@@ -581,11 +581,11 @@ def get_save_hook_ovis2_5(
                     tokens = tokens.reshape(gh * gw, hidden_dim)
                     tokens_2d = tokens.reshape(gh // 2, gw // 2, 2, 2, hidden_dim)
                     tokens_2d = tokens_2d.permute(0, 2, 1, 3, 4).reshape(gh, gw, hidden_dim)
-                    average_features[name].append(
+                    average_activations[name].append(
                         _region_pool(tokens_2d, hidden_dim, split=split).detach()
                     )
                 else:
-                    average_features[name].append(out.mean(dim=0).detach())
+                    average_activations[name].append(out.mean(dim=0).detach())
             elif model_component == "projector":
                 if out.shape[0] > 4:
                     if region_pooling and grid_info is not None:
@@ -593,33 +593,33 @@ def get_save_hook_ovis2_5(
                         hidden_dim = out.shape[-1]
                         tokens_2d = out.reshape(mh, mw, hidden_dim)
                         current_split = split // 2 if split is not None else None
-                        average_features[name].append(
+                        average_activations[name].append(
                             _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
                         )
                     else:
-                        average_features[name].append(out.mean(dim=0).detach())
+                        average_activations[name].append(out.mean(dim=0).detach())
             elif model_component == "llm":
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
-                if llm_features == "visual_embs":
+                if llm_activations == "visual_embs":
                     if region_pooling and grid_info is not None:
                         mh, mw = grid_info["merged_h"], grid_info["merged_w"]
                         vis_tokens = out[0, indices]
                         hidden_dim = vis_tokens.shape[-1]
                         tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
                         current_split = split // 2 if split is not None else None
-                        average_features[name].append(
+                        average_activations[name].append(
                             _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
                         )
                     else:
-                        average_features[name].append(out[:, indices].mean(dim=(0, 1)).detach())
-                elif llm_features == "last_token":
-                    average_features[name].append(out[0, -1].clone().detach())
-                elif llm_features == "all":
-                    average_features[name].append(out.mean(dim=(0, 1)).detach())
-                elif llm_features == "visual_embs_and_last_token":
+                        average_activations[name].append(out[:, indices].mean(dim=(0, 1)).detach())
+                elif llm_activations == "last_token":
+                    average_activations[name].append(out[0, -1].clone().detach())
+                elif llm_activations == "all":
+                    average_activations[name].append(out.mean(dim=(0, 1)).detach())
+                elif llm_activations == "visual_embs_and_last_token":
                     if region_pooling and grid_info is not None:
                         mh, mw = grid_info["merged_h"], grid_info["merged_w"]
                         vis_tokens = out[0, indices]
@@ -630,14 +630,14 @@ def get_save_hook_ovis2_5(
                     else:
                         f1 = out[:, indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
-                    average_features[name].append(torch.cat([f1, f2], dim=0))
+                    average_activations[name].append(torch.cat([f1, f2], dim=0))
         return hook
 
     return save_hook
 
 def get_save_hook_vst(
-    llm_features,
-    average_features,
+    llm_activations,
+    average_activations,
     region_pooling=False,
     grid_info=None,
     window_index=None,
@@ -656,45 +656,45 @@ def get_save_hook_vst(
                     tokens = tokens.reshape(h * w, hidden_dim)
                     tokens_2d = tokens.reshape(h // 2, w // 2, 2, 2, hidden_dim)
                     tokens_2d = tokens_2d.permute(0, 2, 1, 3, 4).reshape(h, w, hidden_dim)
-                    average_features[name].append(
+                    average_activations[name].append(
                         _region_pool(tokens_2d, hidden_dim, split=split).detach()
                     )
                 else:
-                    average_features[name].append(out.mean(dim=0).detach())
+                    average_activations[name].append(out.mean(dim=0).detach())
             elif model_component == "projector":
                 if region_pooling and grid_info is not None:
                     mh, mw = grid_info["merged_h"], grid_info["merged_w"]
                     hidden_dim = out.shape[-1]
                     tokens_2d = out.reshape(mh, mw, hidden_dim)
                     current_split = split // 2 if split is not None else None
-                    average_features[name].append(
+                    average_activations[name].append(
                         _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
                     )
                 else:
-                    average_features[name].append(out.mean(dim=0).detach())
+                    average_activations[name].append(out.mean(dim=0).detach())
             elif model_component == "llm":
                 current_indices = indices_ref["indices"] if indices_ref is not None else indices
                 if "post_layer_norm" in name:
                     out = out.last_hidden_state
                 elif isinstance(out, tuple):
                     out = out[0]
-                if llm_features == "visual_embs":
+                if llm_activations == "visual_embs":
                     if region_pooling and grid_info is not None:
                         mh, mw = grid_info["merged_h"], grid_info["merged_w"]
                         vis_tokens = out[0, current_indices]
                         hidden_dim = vis_tokens.shape[-1]
                         tokens_2d = vis_tokens.reshape(mh, mw, hidden_dim)
                         current_split = split // 2 if split is not None else None
-                        average_features[name].append(
+                        average_activations[name].append(
                             _region_pool(tokens_2d, hidden_dim, split=current_split).detach()
                         )
                     else:
-                        average_features[name].append(out[:, current_indices].mean(dim=(0, 1)).detach())
-                elif llm_features == "last_token":
-                    average_features[name].append(out[0, -1].clone().detach())
-                elif llm_features == "all":
-                    average_features[name].append(out.mean(dim=(0, 1)).detach())
-                elif llm_features == "visual_embs_and_last_token":
+                        average_activations[name].append(out[:, current_indices].mean(dim=(0, 1)).detach())
+                elif llm_activations == "last_token":
+                    average_activations[name].append(out[0, -1].clone().detach())
+                elif llm_activations == "all":
+                    average_activations[name].append(out.mean(dim=(0, 1)).detach())
+                elif llm_activations == "visual_embs_and_last_token":
                     if region_pooling and grid_info is not None:
                         mh, mw = grid_info["merged_h"], grid_info["merged_w"]
                         vis_tokens = out[0, current_indices]
@@ -705,7 +705,7 @@ def get_save_hook_vst(
                     else:
                         f1 = out[:, current_indices].mean(dim=(0, 1)).detach()
                     f2 = out[0, -1].clone().detach()
-                    average_features[name].append(torch.cat([f1, f2], dim=0))
+                    average_activations[name].append(torch.cat([f1, f2], dim=0))
         return hook
 
     return save_hook
@@ -715,12 +715,12 @@ def get_save_hook_vst(
 # ============================================================================
 
 def get_save_path(model_name, args):
-    """Get the save path for features based on model and arguments."""
+    """Get the save path for activations based on model and arguments."""
     if model_name == "ovis2.5":
-        return f"{args.save_path}/ovis2.5/llm_{args.llm_features}"
+        return f"{args.save_path}/ovis2.5/llm_{args.llm_activations}"
     elif model_name == "internvl3.5":
-        return f"{args.save_path}/internvl3.5/cls_{args.use_cls}/llm_{args.llm_features}"
+        return f"{args.save_path}/internvl3.5/cls_{args.use_cls}/llm_{args.llm_activations}"
     elif model_name == "vst":
-        return f"{args.save_path}/vst_{args.version}/llm_{args.llm_features}"
+        return f"{args.save_path}/vst_{args.version}/llm_{args.llm_activations}"
     else:
         raise ValueError(f"Unknown model: {model_name}")
