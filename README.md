@@ -1,6 +1,6 @@
 # Probing Visual Concepts in Lightweight Vision-Language Models for Automated Driving
 
-<a href="https://arxiv.org/abs/XXXX.XXXXX" target="_blank"><img src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg" alt="arXiv"></a>
+<a href="https://arxiv.org/abs/2603.06054" target="_blank"><img src="https://img.shields.io/badge/arXiv-XXXX.XXXXX-b31b1b.svg" alt="arXiv"></a>
 <a href="https://drive.google.com/drive/folders/19-ylfZjILrFhP6OAcm09uys0FC87fKP0?usp=sharing" target="_blank"><img src="https://img.shields.io/badge/Dataset-Google%20Drive-4285F4.svg" alt="Dataset"></a>
 <a href="https://opensource.org/licenses/MIT" target="_blank"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 
@@ -133,10 +133,13 @@ python eval.py \
 If you find this work useful, please cite our paper:
 
 ```bibtex
-@article{author2025probing,
-  title={Probing Visual Concepts in Traffic Scenes},
-  author={Author Names},
-  journal={arXiv preprint arXiv:XXXX.XXXXX},
-  year={2025}
+@misc{theodoridis2026probingvisualconceptslightweight,
+      title={Probing Visual Concepts in Lightweight Vision-Language Models for Automated Driving}, 
+      author={Nikos Theodoridis and Reenu Mohandas and Ganesh Sistu and Anthony Scanlan and Ciarán Eising and Tim Brophy},
+      year={2026},
+      eprint={2603.06054},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2603.06054}, 
 }
 ```
