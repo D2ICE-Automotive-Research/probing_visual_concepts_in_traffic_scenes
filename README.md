@@ -36,21 +36,16 @@ Each annotation corresponds to an image and includes:
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/niktheod/probing_visual_concepts_in_traffic_scenes.git
 cd probing_visual_concepts_in_traffic_scenes
 
-# Create and activate environment
 conda create -n probing_vlms python=3.10 -y
 conda activate probing_vlms
 
-# Install PyTorch with CUDA 12.1
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121
 
-# Install Flash Attention
 pip install flash-attn==2.6.3 --no-build-isolation
 
-# Install remaining packages
 pip install -r requirements.txt
 ```
 
